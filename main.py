@@ -25,33 +25,40 @@ class EuiclideanDistancePrivider:
 
 class UAVProblem(ElementwiseProblem):
 
-    def __init__(self, Nv, Nt, Nm, P, Value, delta, Lmax, Distance, eta):
-        self.Nv = Nv
-        self.Nt = Nt
-        self.Nm = Nm
-        self.P = P
-        self.Value = Value
+    def __init__(self, Nv, Nt, Nm, succ_P, target_values, delta, max_distance, distances, eta):
+        """
+        Nv:       Number of UAVs
+        Nt:       Number of targets
+        Nm:       Number of tasks
+        succ_P:   Probability of success of task on target k performed by UAV i (shape Nv x Nt)
+        Value:    Value of target k
+        """
+        self.uav_count_Nv = Nv
+        self.target_count_Nt = Nt
+        self.task_count_Nm = Nm
+        self.P = succ_P
+        self.target_values = target_values
         self.delta = delta
-        self.Lmax = Lmax
-        self.Distance = Distance
+        self.max_distance = max_distance
+        self.distances = distances
         self.eta = eta
-        self.N = len(Distance) - 1
         
-        super().__init__(n_var=Nv*Nt*Nm,
-                         n_obj=2,
-                         n_constr=Nv*Nt*Nm + Nv + 1,
-                         xl=0,
-                         xu=1,
+        super().__init__(
+            n_var=Nv*Nt*Nm,
+            n_obj=2,
+            n_constr=Nm*Nt + Nv*Nt + Nm*Nv*Nt + Nv,
+            xl=0,
+            xu=1,
         )
         
     def _evaluate(self, x, out, *args, **kwargs):
-        print(x)
-        x = x.reshape((self.Nv, self.Nt, self.Nm))
         print("asdfasdfs --------------------------------- asdfasdfasdfasdf")
+        # print(x)
+        x = x.reshape((self.uav_count_Nv, self.target_count_Nt, self.task_count_Nm))
         # print(x)
         # print("1111 --------------------------------- 1111")
 
-        for i in range(self.Nv):
+        for i in range(self.uav_count_Nv):
             pass
             # total_distance = 0
 
@@ -66,7 +73,14 @@ class UAVProblem(ElementwiseProblem):
         
         # Objective 1: Function value
         # f1_target_value = 1 - np.sum(self.P * self.Value[:, None] * x) / self.delta
-        f1_target_value = 1 - np.einsum("ik,k,ijk->", self.P, self.Value, x) / self.delta
+        print("P shape: ", self.P.shape)
+        print("Value shape: ", self.target_values.shape)
+        print("x shape: ", x.shape)
+        # k and j in x matrix are reversed on purpose
+        f1_target_value = 1 - np.einsum("ik,k,ikj->", self.P, self.target_values, x) / self.delta
+        # f1_target_value = 1 - np.einsum("ik,k,ijk->j", self.P, self.Value, x) / self.delta
+        # f1_target_value = 1 - np.einsum("k,ikj->", self.Value, x) / self.delta
+        print("F1: ", f1_target_value)
         
         # Objective 2: Distance cost function
         total_distance = 0
@@ -88,12 +102,12 @@ class UAVProblem(ElementwiseProblem):
 
 
         # Constraint: All tasks must be completed
-        g.append(np.sum(x) - self.Nm * self.Nt)
+        g.append(np.sum(x) - self.task_count_Nm * self.target_count_Nt)
         
 
         # Constraint: Each UAV can perform at most one task for each target
-        for i in range(self.Nv):
-            for k in range(self.Nt):
+        for i in range(self.uav_count_Nv):
+            for k in range(self.task_count_Nm):
                 g.append(np.sum(x[i, :, k]) - 1)
         
         
@@ -121,19 +135,19 @@ class UAVProblem(ElementwiseProblem):
 
 
 # Example parameters
-Nv = 3
-Nt = 2
-Nm = 2
-P = np.random.rand(Nv, Nm)
-Value = np.random.rand(Nt)
+dron_count_Nv = 3
+target_count_Nt = 3
+tasks_count_Nm = 2
+P = np.random.rand(dron_count_Nv, target_count_Nt)
+target_values = np.random.rand(target_count_Nt)
 delta = 1.0
-Lmax = np.random.rand(Nv) * 100
-points = np.random.rand(Nv, Nt + 1, 2)
+l_max = np.random.rand(dron_count_Nv) * 100
+points = np.random.rand(dron_count_Nv, target_count_Nt + 1, 2)
 distance_provider = EuiclideanDistancePrivider(points)
 eta = 1.0
 
 # Create problem instance
-problem = UAVProblem(Nv, Nt, Nm, P, Value, delta, Lmax, distance_provider, eta)
+problem = UAVProblem(dron_count_Nv, target_count_Nt, tasks_count_Nm, P, target_values, delta, l_max, distance_provider, eta)
 
 # Set up algorithm
 algorithm = NSGA2(
