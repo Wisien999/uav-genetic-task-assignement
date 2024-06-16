@@ -167,7 +167,7 @@ class UAVProblem(ElementwiseProblem):
         
         super().__init__(
             n_var=Nv*Nt*Nm,
-            n_obj=2,
+            n_obj=3,
             n_constr=Nm*Nt + Nv*Nt + 1 + Nv, # *2 is to force equality
             xl=0,
             xu=1,
@@ -180,12 +180,18 @@ class UAVProblem(ElementwiseProblem):
     @property
     def target_count_Nt(self):
         return self.uavs_and_targets.target_count
+
+    @property
+    def all_tasks_count(self):
+        return self.target_count_Nt * self.task_count_Nm
+
+    def format_x(self, x):
+        return np.round(x).reshape((self.uav_count_Nv, self.target_count_Nt, self.task_count_Nm))
         
     def _evaluate(self, x, out, *args, **kwargs):
         global DEBUG_LEVEL
         constraints = []
-        x = np.round(x)
-        x = x.reshape((self.uav_count_Nv, self.target_count_Nt, self.task_count_Nm))
+        x = self.format_x(x)
         if DEBUG_LEVEL >= 1:
             print()
             print("----------------------------- NEW GENERATION -----------------------------")
@@ -209,8 +215,10 @@ class UAVProblem(ElementwiseProblem):
 
         # Objective 2: Distance cost function
         f2_distance_cost = np.sum(paths_lengths)
+
+        f3_tasks_completed = x.sum()
         
-        out["F"] = [f1_target_value, f2_distance_cost]
+        out["F"] = [f1_target_value, f2_distance_cost, -f3_tasks_completed]
         if DEBUG_LEVEL >= 1:
             print("F", out["F"])
         
@@ -221,10 +229,10 @@ class UAVProblem(ElementwiseProblem):
         assert len(task_performed_once_constraints) == self.task_count_Nm * self.target_count_Nt
 
 
-        # Constraint: Almost all tasks must be completed
-        tasks_completed_constraint = self.task_to_complete - x.sum()
-        tasks_completed_constraint = int(tasks_completed_constraint)
-        assert type(tasks_completed_constraint) is int
+        # Constraint: Enough tasks must be completed
+        tasks_completed_constraint = self.task_to_complete - f3_tasks_completed
+        tasks_completed_constraint = tasks_completed_constraint / self.all_tasks_count # normalization
+        assert type(tasks_completed_constraint) is np.float64 or type(tasks_completed_constraint) is np.float32
         constraints.append(tasks_completed_constraint)
         
 
@@ -284,6 +292,6 @@ res = minimize(problem,
 )
 
 # Print results
-print("Best solution found: \nX = %s\nF = %s" % (np.round(res.X), res.F))
+print("Best solution found: \nX = %s\nF = %s" % (res.X, res.F))
 
 
