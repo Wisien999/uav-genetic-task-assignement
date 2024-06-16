@@ -1,3 +1,4 @@
 matplotlib==3.9.0
 numpy==1.26.4
 pymoo==0.6.1.1
+fast-tsp==0.1.4
