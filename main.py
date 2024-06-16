@@ -1,4 +1,5 @@
 import numpy as np
+from typing import Optional
 from numpy._typing import ArrayLike
 from pymoo.core.problem import ElementwiseProblem
 from pymoo.optimize import minimize
@@ -139,7 +140,7 @@ def distance_cost(visited_targets, uavs_and_targets: UavsAndTargets) -> ArrayLik
 
 
 class UAVProblem(ElementwiseProblem):
-    def __init__(self, uavs_and_targets: UavsAndTargets, Nm: int, succ_P, target_values, delta, max_distances, task_skip_tolerance: int = 0):
+    def __init__(self, uavs_and_targets: UavsAndTargets, Nm: int, succ_P, target_values, delta, max_distances, task_to_complete: Optional[int] = None):
         """
         Nv:             Number of UAVs
         Nt:             Number of targets
@@ -151,17 +152,18 @@ class UAVProblem(ElementwiseProblem):
         Nv = uavs_and_targets.uav_count
         Nt = uavs_and_targets.target_count
 
+        self.task_to_complete = task_to_complete or Nm * Nt
+
         assert Nv == uavs_and_targets.uav_count
         assert Nv == succ_P.shape[0]
         assert Nt == target_values.shape[0]
         assert delta > 0
 
         self.task_count_Nm = Nm
-        self.P = succ_P
+        self.succ_prob = succ_P
         self.target_values = target_values
         self.delta = delta
         self.max_distance = max_distances
-        self.task_skip_tolerance = task_skip_tolerance
         
         super().__init__(
             n_var=Nv*Nt*Nm,
@@ -189,7 +191,7 @@ class UAVProblem(ElementwiseProblem):
             print("----------------------------- NEW GENERATION -----------------------------")
             print()
         
-            print("P shape: ", self.P.shape)
+            print("P shape: ", self.succ_prob.shape)
             print("Value shape: ", self.target_values.shape)
             print("x shape: ", x.shape)
 
@@ -197,7 +199,7 @@ class UAVProblem(ElementwiseProblem):
 
         # Objective 1: Function value
         # k and j in x matrix are reversed on purpose (relative to original paper)
-        f1_target_value = 1 - np.einsum("ik,k,ikj->", self.P, self.target_values, x) / self.delta
+        f1_target_value = 1 - np.einsum("ik,k,ikj->", self.succ_prob, self.target_values, x) / self.delta
         
         visited_targets = find_visited_targets(x)
         if DEBUG_LEVEL >= 1:
@@ -219,8 +221,8 @@ class UAVProblem(ElementwiseProblem):
         assert len(task_performed_once_constraints) == self.task_count_Nm * self.target_count_Nt
 
 
-        # Constraint: All tasks must be completed
-        tasks_completed_constraint = self.task_count_Nm * self.target_count_Nt - self.task_skip_tolerance - x.sum()
+        # Constraint: Almost all tasks must be completed
+        tasks_completed_constraint = self.task_to_complete - x.sum()
         tasks_completed_constraint = int(tasks_completed_constraint)
         assert type(tasks_completed_constraint) is int
         constraints.append(tasks_completed_constraint)
@@ -260,7 +262,7 @@ target_positions = np.random.rand(target_count_Nt, 2)
 uav_and_targets = UavsAndTargets(uav_positions, target_positions)
 
 # Create problem instance
-problem = UAVProblem(uav_and_targets, tasks_count_Nm, P, target_values, delta, l_max, task_skip_tolerance=5)
+problem = UAVProblem(uav_and_targets, tasks_count_Nm, P, target_values, delta, l_max, task_to_complete=target_count_Nt * tasks_count_Nm - 5)
 
 # Set up algorithm
 algorithm = NSGA2(
@@ -282,6 +284,6 @@ res = minimize(problem,
 )
 
 # Print results
-print("Best solution found: \nX = %s\nF = %s" % (res.X, res.F))
+print("Best solution found: \nX = %s\nF = %s" % (np.round(res.X), res.F))
 
 
