@@ -3,11 +3,14 @@ from typing import Optional
 from numpy._typing import ArrayLike
 from pymoo.core.problem import ElementwiseProblem
 from pymoo.optimize import minimize
+from pymoo.algorithms.soo.nonconvex.ga import GA
 from pymoo.algorithms.moo.nsga2 import NSGA2
-from pymoo.algorithms.moo.nsga3 import NSGA3
 import pymoo.operators.sampling.rnd as pmrnd
+from pymoo.util.display.column import Column
+from pymoo.util.display.output import Output
 from pymoo.termination import get_termination
 import fast_tsp as tsp
+import time
 
 DEBUG_LEVEL = 0
 
@@ -168,6 +171,7 @@ class UAVProblem(ElementwiseProblem):
         super().__init__(
             n_var=Nv*Nt*Nm,
             n_obj=3,
+            # n_obj=1,
             n_constr=Nm*Nt + Nv*Nt + 1 + Nv, # *2 is to force equality
             xl=0,
             xu=1,
@@ -219,6 +223,7 @@ class UAVProblem(ElementwiseProblem):
         f3_tasks_completed = x.sum()
         
         out["F"] = [f1_target_value, f2_distance_cost, -f3_tasks_completed]
+        # out["F"] = [f1_target_value + f2_distance_cost - f3_tasks_completed]
         if DEBUG_LEVEL >= 1:
             print("F", out["F"])
         
@@ -255,6 +260,24 @@ class UAVProblem(ElementwiseProblem):
             print("G", out["G"])
 
 
+class GAOutput(Output):
+
+    def __init__(self):
+        super().__init__()
+        self.x_mean = Column("x_mean", width=13)
+        self.x_std = Column("x_std", width=13)
+        self.columns += [self.x_mean, self.x_std]
+
+    def update(self, algorithm):
+        super().update(algorithm)
+        self.x_mean.set(np.mean(algorithm.pop.get("X")))
+        self.x_std.set(np.std(algorithm.pop.get("X")))
+        with open('x_mean.txt', 'a') as f:
+            f.write(str(np.mean(algorithm.pop.get("X"))) + ',\n')
+        with open('x_std.txt', 'a') as f:
+            f.write(str(np.std(algorithm.pop.get("X"))) + ',\n')
+
+
 
 # Example parameters
 dron_count_Nv = 5
@@ -263,7 +286,7 @@ tasks_count_Nm = 3
 P = np.random.rand(dron_count_Nv, target_count_Nt)
 target_values = np.random.rand(target_count_Nt)
 delta = 1.0
-l_max = np.random.rand(dron_count_Nv) * 100
+l_max = np.array([300] * dron_count_Nv)
 
 uav_positions = np.random.rand(dron_count_Nv, 2)
 target_positions = np.random.rand(target_count_Nt, 2)
@@ -273,13 +296,16 @@ uav_and_targets = UavsAndTargets(uav_positions, target_positions)
 problem = UAVProblem(uav_and_targets, tasks_count_Nm, P, target_values, delta, l_max, task_to_complete=target_count_Nt * tasks_count_Nm - 5)
 
 # Set up algorithm
+# algorithm = GA(
 algorithm = NSGA2(
     pop_size=100,
     sampling=pmrnd.BinaryRandomSampling(), # type: ignore
 )
 
 # Set up termination criteria
-termination = get_termination("n_gen", 1000)
+termination = get_termination("n_gen", 500)
+
+start = time.time()
 
 # Solve the problem
 res = minimize(problem,
@@ -289,9 +315,14 @@ res = minimize(problem,
                save_history=True,
                verbose=True,
                eliminate_duplicates=True,
+               # output=GAOutput(),
+
 )
+
+end = time.time()
 
 # Print results
 print("Best solution found: \nX = %s\nF = %s" % (res.X, res.F))
+print("Elapsed time: ", end - start)
 
 
